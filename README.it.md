@@ -1,4 +1,4 @@
-# Circlix — v1.3.0
+# Circlix — v1.3.1
 
 <p align="center">
   <img src="icons/icon-192.png" alt="Circlix Icon" width="128" height="128">
@@ -18,6 +18,12 @@ L'app è ora configurata come **Progressive Web App (PWA)**, installabile su iOS
 > Per la documentazione in lingua inglese, vedi [README.md](README.md).
 
 ## Changelog
+
+**v1.3.1**
+- Grafica ed effetti visivi potenziati con bloom neon multi-pass e rendering ottimizzato a 60–120 FPS.
+- Aggiunta scia dinamica a cometa (motion ribbon), deformazione squash & stretch nei cambi corsia e scintille di velocità.
+- Aggiunto screen shake (scuotimento telecamera), anelli di onde d'urto e moltiplicatore combo con chime audio a tono crescente.
+- Aggiornati i link in Impostazioni per il supporto allo sviluppo (`https://www.sputlab.com/donate`) e lo studio (`https://www.sputlab.com`).
 
 **v1.3.0**
 - Supporto completo Progressive Web App (PWA) con caching e gioco offline via Service Worker.
@@ -101,8 +107,8 @@ L'app è ora configurata come **Progressive Web App (PWA)**, installabile su iOS
 - Aggiunto un pulsante **Settings** al posto del vecchio toggle audio in
   splash. Apre un modale con: interruttore audio, pulsante Changelog
   (apre lo storico versioni in un secondo modale), link "Support
-  development" (paypal.me/sputnikov) e link "More Apps & Games"
-  (sputlab.com/webapp), più la scritta "Made with love by sputlab.com"
+  development" (sputlab.com/donate) e link "More Apps & Games"
+  (sputlab.com), più la scritta "Made with love by sputlab.com"
   in fondo.
 - **Tradotta interamente l'interfaccia in inglese** (HUD, overlay,
   splash, messaggi di stato, messaggi di errore delle API PHP) per

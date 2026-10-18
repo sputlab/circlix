@@ -59,10 +59,15 @@
   }
 
   // --- correct actions -------------------------------------------------
-  function playTargetHit() {
-    // bright two-note chime
-    tone(660, 0.09, 'sine', 0.22, 900);
-    setTimeout(() => tone(990, 0.08, 'sine', 0.16, undefined), 45);
+  function playTargetHit(combo = 0) {
+    // bright chime with harmonic pitch rise on streak combos
+    const pitchMul = Math.min(1.65, Math.pow(1.045, Math.max(0, combo)));
+    const baseFreq = 660 * pitchMul;
+    const peakFreq = 900 * pitchMul;
+    const chime2 = 990 * pitchMul;
+
+    tone(baseFreq, 0.09, 'sine', 0.22, peakFreq);
+    setTimeout(() => tone(chime2, 0.08, 'sine', 0.17, undefined), 42);
   }
 
   function playDodge() {

@@ -1,6 +1,6 @@
 /* ==========================================================================
-   Circlix — v1.2.1
-   Game engine (vanilla JS, canvas 2D)
+   Circlix — v1.3.1
+   Game engine (vanilla JS, high-performance canvas 2D)
    -------------------------------------------------------------------------
    Mechanic
    - Player orbits a fixed circular track, split into an inner and an outer
@@ -22,20 +22,20 @@
       lives: 4,
       maxLives: 8,           // 4 starting + up to 4 earned
       targetsPerExtraLife: 8,
-      baseSpeed: 1.05,      // rad/s
-      rampRate: 0.005,      // rad/s^2 — reaching 2.5x now takes ~5 min instead of ~2
+      baseSpeed: 1.05,       // rad/s
+      rampRate: 0.005,       // rad/s^2
       maxSpeed: 3.0,
-      spawnGapMin: 0.62,    // rad between spawns
+      spawnGapMin: 0.62,     // rad between spawns
       spawnGapMax: 0.95,
-      bandWidth: 0.30,      // rad
+      bandWidth: 0.30,       // rad
       obstacleChance: 0.5,
       targetChance: 0.28,
-      slowChance: 0.05,      // "rallenta" bonus segment — was too frequent at 0.12
-      lifeChance: 0.008,      // rare "+2 vite" bonus segment — made rarer
-      bombChance: 0.025,      // clears all obstacles currently on the track
+      slowChance: 0.05,
+      lifeChance: 0.008,
+      bombChance: 0.025,
       targetPoints: 80,
       survivalPointsPerSec: 12,
-      slowFactor: 0.5,        // temporary speed multiplier while active
+      slowFactor: 0.5,
       slowDurationMs: 3200,
       lifeBonusAmount: 2
     },
@@ -44,7 +44,7 @@
       maxLives: 4,           // 2 starting + up to 2 earned
       targetsPerExtraLife: 6,
       baseSpeed: 1.6,
-      rampRate: 0.010,      // was too steep — reaching 2.5x now takes ~4 min instead of ~2
+      rampRate: 0.010,
       maxSpeed: 4.6,
       spawnGapMin: 0.46,
       spawnGapMax: 0.72,
@@ -64,7 +64,7 @@
 
   /** @type {HTMLCanvasElement} */
   const canvas = document.getElementById('game-canvas');
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { alpha: false }); // alpha false enables faster compositor compositing
 
   const el = {
     splash: document.getElementById('splash'),
@@ -111,7 +111,8 @@
     lbList: document.getElementById('lb-list')
   };
 
-  let dpr = Math.max(1, window.devicePixelRatio || 1);
+  // DPR capped to 2 to maintain steady 60-120fps on high-density displays
+  let dpr = Math.min(window.devicePixelRatio || 1, 2);
   let cssW = 0, cssH = 0, cx = 0, cy = 0, radius = 0, laneGap = 0;
 
   let selectedDifficulty = 'easy';
@@ -119,18 +120,44 @@
   let lastTs = 0;
 
   let player, spawnMgr, score, lives, targetsHit, elapsed, cfg;
-  let slowUntil = 0; // performance.now() timestamp until which the "slow" bonus is active
-  let runTokenPromise = null; // resolves to the signed run token for the current game
-  let effects = [];  // transient visual feedback: floating text + particle bursts
+  let slowUntil = 0;
+  let runTokenPromise = null;
+  let comboCount = 0;
+
+  // Visual Effects & Animation Systems
+  let effects = [];       // floating text + particles
+  let shockwaves = [];    // expanding blast rings
+  let ambientStars = [];  // subtle background dust
+  let screenShake = { trauma: 0, x: 0, y: 0 };
+
+  // ---------------------------------------------------------------------
+  // Ambient Starfield
+  // ---------------------------------------------------------------------
+  function initAmbientStars() {
+    ambientStars = [];
+    const count = 38;
+    for (let i = 0; i < count; i++) {
+      ambientStars.push({
+        rFactor: 0.15 + Math.random() * 1.35,
+        angle: Math.random() * TWO_PI,
+        speed: (Math.random() * 0.05 + 0.015) * (Math.random() < 0.5 ? 1 : -1),
+        size: Math.random() * 1.5 + 0.6,
+        baseAlpha: Math.random() * 0.38 + 0.12,
+        pulseSpeed: Math.random() * 2 + 1,
+        pulsePhase: Math.random() * TWO_PI
+      });
+    }
+  }
 
   // ---------------------------------------------------------------------
   // Sizing — responsive down to small phones (iPhone 12 mini and below)
   // ---------------------------------------------------------------------
   function resize() {
     const wrap = canvas.parentElement;
+    if (!wrap) return;
     cssW = wrap.clientWidth;
     cssH = wrap.clientHeight;
-    dpr = Math.max(1, window.devicePixelRatio || 1);
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -140,9 +167,47 @@
     const shortSide = Math.min(cssW, cssH);
     radius = shortSide * 0.34;
     laneGap = Math.max(16, shortSide * 0.055);
+
+    if (ambientStars.length === 0) {
+      initAmbientStars();
+    }
   }
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', () => setTimeout(resize, 50));
+
+  // ---------------------------------------------------------------------
+  // Camera Shake (Trauma model)
+  // ---------------------------------------------------------------------
+  function addTrauma(amount) {
+    screenShake.trauma = Math.min(1.0, screenShake.trauma + amount);
+  }
+
+  function updateScreenShake(dt) {
+    if (screenShake.trauma > 0) {
+      screenShake.trauma = Math.max(0, screenShake.trauma - dt * 2.8);
+      const shakeVal = screenShake.trauma * screenShake.trauma;
+      const maxOffset = 13;
+      screenShake.x = (Math.random() * 2 - 1) * maxOffset * shakeVal;
+      screenShake.y = (Math.random() * 2 - 1) * maxOffset * shakeVal;
+    } else {
+      screenShake.x = 0;
+      screenShake.y = 0;
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Shockwave Rings
+  // ---------------------------------------------------------------------
+  function spawnShockwave(x, y, color, maxRadius, duration = 350, lineWidth = 3.5) {
+    shockwaves.push({
+      x, y, color,
+      radius: 4,
+      maxRadius,
+      start: performance.now(),
+      duration,
+      lineWidth
+    });
+  }
 
   // ---------------------------------------------------------------------
   // Player
@@ -150,18 +215,47 @@
   function createPlayer() {
     return {
       totalAngle: 0,        // unbounded, always increasing
-      lane: 0,               // 0 = inner, 1 = outer
-      laneT: 0,               // animated 0..1 for smooth radius transition
+      lane: 0,              // 0 = inner, 1 = outer
+      laneT: 0,              // animated 0..1 for smooth radius transition
       laneTarget: 0,
-      switching: false,
-      flashUntil: 0          // ms timestamp for hit flash
+      flashUntil: 0,        // ms timestamp for hit flash
+      squash: 1.0,          // squash/stretch scaling factor
+      trail: [],            // array of recent position samples
+      trailTimer: 0
     };
   }
 
   function toggleLane() {
     if (state !== 'playing') return;
+    const fromLane = player.lane;
     player.lane = player.lane === 0 ? 1 : 0;
     player.laneTarget = player.lane;
+    player.squash = 1.34;
+    spawnLaneSwitchSparks(fromLane, player.lane);
+  }
+
+  function spawnLaneSwitchSparks(fromLane, toLane) {
+    const rInner = radius - laneGap / 2;
+    const rOuter = radius + laneGap / 2;
+    const count = 7;
+    const curAngle = player.totalAngle % TWO_PI;
+
+    for (let i = 0; i < count; i++) {
+      const p = Math.random();
+      const r = rInner + (rOuter - rInner) * p;
+      const spreadAngle = curAngle + (Math.random() - 0.5) * 0.12;
+      effects.push({
+        type: 'spark',
+        x: cx + r * Math.sin(spreadAngle),
+        y: cy - r * Math.cos(spreadAngle),
+        vx: (Math.random() - 0.5) * 45,
+        vy: (Math.random() - 0.5) * 45,
+        color: '#FFB020',
+        size: Math.random() * 2 + 1.2,
+        start: performance.now(),
+        duration: 220 + Math.random() * 120
+      });
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -169,19 +263,12 @@
   // ---------------------------------------------------------------------
   function createSpawnManager() {
     return {
-      items: [],          // { angle, lane, type, width, resolved, scored, missed }
-      nextSpawnAngle: TWO_PI * 0.35 // short breather at start (must stay below the 0.55 lookahead below)
+      items: [],
+      nextSpawnAngle: TWO_PI * 0.35
     };
   }
 
   function maybeSpawn() {
-    // Lookahead MUST stay under one full lap (TWO_PI). Items are rendered
-    // at (angle % TWO_PI), so if we ever pre-spawn more than a full lap
-    // ahead, an item that is actually a whole lap away renders at nearly
-    // the same screen position as the very next, truly-imminent item —
-    // a "decoy" band the player reacts to while the real one sneaks past
-    // underneath it. That was causing hits that looked unfair: the player
-    // was dodging the wrong (far-away) band. Kept well under TWO_PI here.
     while (spawnMgr.nextSpawnAngle < player.totalAngle + TWO_PI * 0.55) {
       const roll = Math.random();
       let type = 'gap';
@@ -204,7 +291,8 @@
           lane: Math.random() < 0.5 ? 0 : 1,
           type,
           width: cfg.bandWidth,
-          resolved: false
+          resolved: false,
+          spawnTime: performance.now()
         });
       }
 
@@ -212,7 +300,6 @@
       spawnMgr.nextSpawnAngle += gap;
     }
 
-    // garbage collect items well behind the player
     spawnMgr.items = spawnMgr.items.filter(
       (it) => player.totalAngle - it.angle < TWO_PI * 0.5
     );
@@ -229,13 +316,14 @@
     score = 0;
     lives = cfg.lives;
     targetsHit = 0;
+    comboCount = 0;
     slowUntil = 0;
     effects = [];
+    shockwaves = [];
+    screenShake = { trauma: 0, x: 0, y: 0 };
     elapsed = 0;
     state = 'playing';
 
-    // Kicked off now, awaited later at submission time — this way it
-    // doesn't delay the start of the game itself.
     runTokenPromise = window.CCLeaderboard.startRun(difficulty);
 
     showScreen('game');
@@ -284,26 +372,72 @@
   }
 
   // ---------------------------------------------------------------------
-  // Update
+  // Update Loop
   // ---------------------------------------------------------------------
   function update(dt) {
     elapsed += dt;
 
-    // The difficulty ramp keeps accumulating in the background even while
-    // a "slow" bonus is active — it's a temporary reprieve, not a reset.
+    // Difficulty speed ramp
     const rampSpeed = Math.min(cfg.maxSpeed, cfg.baseSpeed + elapsed * cfg.rampRate);
     const slowActive = performance.now() < slowUntil;
     const speed = slowActive ? rampSpeed * cfg.slowFactor : rampSpeed;
     player.totalAngle += speed * dt;
 
-    // smooth lane transition
+    // Smooth lane transition with spring recovery
     const target = player.laneTarget;
-    player.laneT += (target - player.laneT) * Math.min(1, dt * 14);
+    player.laneT += (target - player.laneT) * Math.min(1, dt * 15);
+    player.squash += (1.0 - player.squash) * Math.min(1, dt * 10);
 
     score += cfg.survivalPointsPerSec * dt;
 
+    // Update screen shake
+    updateScreenShake(dt);
+
+    // Current player position on canvas
+    const rInner = radius - laneGap / 2;
+    const rOuter = radius + laneGap / 2;
+    const curR = rInner + (rOuter - rInner) * player.laneT;
+    const curAngle = player.totalAngle % TWO_PI;
+    const playerPos = {
+      x: cx + curR * Math.sin(curAngle),
+      y: cy - curR * Math.cos(curAngle)
+    };
+
+    // Update player comet ribbon history
+    player.trail.unshift({
+      x: playerPos.x,
+      y: playerPos.y,
+      r: curR,
+      angle: curAngle,
+      time: performance.now()
+    });
+
+    const maxTrailPoints = Math.round(14 + (speed / cfg.baseSpeed) * 8);
+    if (player.trail.length > maxTrailPoints) {
+      player.trail.length = maxTrailPoints;
+    }
+
+    // Trailing speed ember emission
+    player.trailTimer = (player.trailTimer || 0) + dt;
+    if (player.trailTimer > 0.04) {
+      player.trailTimer = 0;
+      const backAngle = curAngle - 0.08 * (speed / cfg.baseSpeed);
+      effects.push({
+        type: 'ember',
+        x: cx + curR * Math.sin(backAngle) + (Math.random() - 0.5) * 5,
+        y: cy - curR * Math.cos(backAngle) + (Math.random() - 0.5) * 5,
+        vx: (Math.random() - 0.5) * 16,
+        vy: (Math.random() - 0.5) * 16,
+        color: slowActive ? '#3EA6FF' : (comboCount >= 3 ? '#FFE066' : '#FFB020'),
+        size: Math.random() * 2.2 + 1,
+        start: performance.now(),
+        duration: 260
+      });
+    }
+
     maybeSpawn();
 
+    // Collision detection & Resolution
     const halfBand = cfg.bandWidth / 2;
     for (const it of spawnMgr.items) {
       if (it.resolved) continue;
@@ -317,35 +451,54 @@
         } else if (it.type === 'target' && sameLane) {
           it.resolved = true;
           const precision = 1 - Math.min(1, Math.abs(dist) / halfBand);
-          const gained = Math.round(cfg.targetPoints * (0.5 + 0.5 * precision));
+          comboCount += 1;
+          const comboBonus = comboCount >= 3 ? Math.min(60, (comboCount - 2) * 15) : 0;
+          const gained = Math.round(cfg.targetPoints * (0.5 + 0.5 * precision)) + comboBonus;
           score += gained;
           player.flashUntil = performance.now() + 180;
-          window.CCSound.playTargetHit();
-          spawnPopup('+' + gained, '#2FE3B4');
-          spawnBurst('#2FE3B4', 8);
+
+          // Sound with harmonic combo pitch
+          window.CCSound.playTargetHit(comboCount);
+          addTrauma(0.08);
+          spawnShockwave(playerPos.x, playerPos.y, '#2FE3B4', 38, 300, 3);
+
+          if (comboCount >= 3) {
+            spawnPopup('+' + gained + ' (x' + comboCount + ' COMBO!)', '#2FE3B4', true);
+          } else if (precision > 0.88) {
+            spawnPopup('PERFECT! +' + gained, '#2FE3B4', true);
+          } else {
+            spawnPopup('+' + gained, '#2FE3B4', false);
+          }
+          spawnBurstAt(playerPos.x, playerPos.y, '#2FE3B4', precision > 0.88 ? 16 : 10, precision > 0.88);
 
           targetsHit += 1;
           if (targetsHit % cfg.targetsPerExtraLife === 0 && lives < cfg.maxLives) {
             lives += 1;
             window.CCSound.playExtraLife();
             pulseLivesHud();
-            spawnPopup('+1 LIFE', '#FFB020');
+            spawnShockwave(playerPos.x, playerPos.y, '#FFB020', 48, 380, 4);
+            spawnPopup('+1 LIFE', '#FFB020', true);
+            spawnBurstAt(playerPos.x, playerPos.y, '#FFB020', 16, true);
           }
         } else if (it.type === 'slow' && sameLane) {
           it.resolved = true;
           slowUntil = performance.now() + cfg.slowDurationMs;
           player.flashUntil = performance.now() + 180;
           window.CCSound.playSlow();
-          spawnPopup('SLOW', '#3EA6FF');
-          spawnBurst('#3EA6FF', 10);
+          addTrauma(0.08);
+          spawnShockwave(playerPos.x, playerPos.y, '#3EA6FF', 42, 350, 3.5);
+          spawnPopup('SLOW', '#3EA6FF', true);
+          spawnBurstAt(playerPos.x, playerPos.y, '#3EA6FF', 14, false);
         } else if (it.type === 'life' && sameLane) {
           it.resolved = true;
           const before = lives;
           lives = Math.min(cfg.maxLives, lives + cfg.lifeBonusAmount);
           player.flashUntil = performance.now() + 220;
           window.CCSound.playBigBonus();
-          spawnPopup('+2 LIVES', '#C77DFF');
-          spawnBurst('#C77DFF', 16);
+          addTrauma(0.12);
+          spawnShockwave(playerPos.x, playerPos.y, '#C77DFF', 52, 420, 4);
+          spawnPopup('+2 LIVES', '#C77DFF', true);
+          spawnBurstAt(playerPos.x, playerPos.y, '#C77DFF', 20, true);
           if (lives > before) pulseLivesHud();
         } else if (it.type === 'bomb' && sameLane) {
           it.resolved = true;
@@ -353,9 +506,6 @@
           triggerBomb();
         }
       } else if (dist > halfBand) {
-        // Passed without interacting: a safely dodged obstacle is a
-        // correct action and gets a soft confirmation tick. A missed
-        // target (wrong lane) is neutral, not a mistake — no sound.
         if (it.type === 'obstacle') {
           window.CCSound.playDodge();
         }
@@ -367,9 +517,7 @@
   }
 
   // ---------------------------------------------------------------------
-  // Visual feedback — floating text + particle bursts at the player's
-  // current position, so every pickup/hit has an on-screen confirmation
-  // in addition to its sound.
+  // Visual Effects Spawners
   // ---------------------------------------------------------------------
   function getPlayerScreenPos() {
     const rInner = radius - laneGap / 2;
@@ -379,29 +527,6 @@
     return { x: cx + r * Math.sin(a), y: cy - r * Math.cos(a) };
   }
 
-  function spawnPopup(text, color) {
-    const pos = getPlayerScreenPos();
-    effects.push({ type: 'text', x: pos.x, y: pos.y, text, color, start: performance.now(), duration: 850 });
-  }
-
-  function spawnBurstAt(x, y, color, count) {
-    const now = performance.now();
-    for (let i = 0; i < count; i++) {
-      const a = Math.random() * TWO_PI;
-      const speed = 50 + Math.random() * 70;
-      effects.push({
-        type: 'particle', x, y,
-        vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-        color, start: now, duration: 480
-      });
-    }
-  }
-
-  function spawnBurst(color, count) {
-    const pos = getPlayerScreenPos();
-    spawnBurstAt(pos.x, pos.y, color, count);
-  }
-
   function getRingScreenPos(lane, angle) {
     const rInner = radius - laneGap / 2;
     const rOuter = radius + laneGap / 2;
@@ -409,31 +534,71 @@
     return { x: cx + r * Math.sin(angle), y: cy - r * Math.cos(angle) };
   }
 
-  // "Bomb" bonus: clears every obstacle currently on the track, with a
-  // small explosion burst at each one's exact position.
+  function spawnPopup(text, color, isCrit = false) {
+    const pos = getPlayerScreenPos();
+    effects.push({
+      type: 'text',
+      x: pos.x,
+      y: pos.y,
+      text,
+      color,
+      isCrit,
+      start: performance.now(),
+      duration: isCrit ? 950 : 800
+    });
+  }
+
+  function spawnBurstAt(x, y, color, count, highVelocity = false) {
+    const now = performance.now();
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * TWO_PI;
+      const baseSpeed = highVelocity ? (80 + Math.random() * 110) : (50 + Math.random() * 70);
+      effects.push({
+        type: 'particle',
+        x, y,
+        vx: Math.cos(a) * baseSpeed,
+        vy: Math.sin(a) * baseSpeed,
+        color,
+        size: Math.random() * 2.8 + 1.2,
+        drag: highVelocity ? 0.92 : 0.95,
+        start: now,
+        duration: 440 + Math.random() * 160
+      });
+    }
+  }
+
   function triggerBomb() {
     let destroyed = 0;
     for (const it of spawnMgr.items) {
       if (!it.resolved && it.type === 'obstacle') {
         const renderAngle = ((it.angle % TWO_PI) + TWO_PI) % TWO_PI;
         const pos = getRingScreenPos(it.lane, renderAngle);
-        spawnBurstAt(pos.x, pos.y, '#FFA53D', 12);
-        spawnBurstAt(pos.x, pos.y, '#FF4D5E', 6);
+        spawnBurstAt(pos.x, pos.y, '#FFA53D', 16, true);
+        spawnBurstAt(pos.x, pos.y, '#FF4D5E', 10, true);
+        spawnShockwave(pos.x, pos.y, '#FFA53D', 42, 320, 3);
         it.resolved = true;
         destroyed += 1;
       }
     }
     window.CCSound.playBomb();
-    spawnPopup(destroyed > 0 ? 'BOOM!' : 'CLEAR', '#FFA53D');
-    spawnBurst('#FFA53D', 14);
+    addTrauma(0.85); // heavy camera rumble
+    spawnShockwave(cx, cy, '#FFA53D', radius * 1.55, 600, 6);
+    spawnPopup(destroyed > 0 ? 'BOOM! ' + destroyed + ' CLEARED' : 'CLEAR', '#FFA53D', true);
+    const playerPos = getPlayerScreenPos();
+    spawnBurstAt(playerPos.x, playerPos.y, '#FFA53D', 24, true);
   }
 
   function hitObstacle() {
     lives -= 1;
-    player.flashUntil = performance.now() + 260;
+    comboCount = 0;
+    player.flashUntil = performance.now() + 280;
+    addTrauma(0.65); // sharp impact shake
     window.CCSound.playHit();
-    spawnPopup('-1', '#FF4D5E');
-    if (navigator.vibrate) navigator.vibrate(40);
+    const pos = getPlayerScreenPos();
+    spawnShockwave(pos.x, pos.y, '#FF4D5E', 55, 420, 4);
+    spawnPopup('-1', '#FF4D5E', true);
+    spawnBurstAt(pos.x, pos.y, '#FF4D5E', 22, true);
+    if (navigator.vibrate) navigator.vibrate(50);
     if (lives <= 0) {
       endGame();
     }
@@ -450,135 +615,62 @@
 
   function pulseLivesHud() {
     const wrap = document.getElementById('hud-lives-wrap');
+    if (!wrap) return;
     wrap.classList.add('pulse');
     setTimeout(() => wrap.classList.remove('pulse'), 260);
   }
 
   // ---------------------------------------------------------------------
-  // Render
+  // High-Performance Bloom & Rendering Pipeline
   // ---------------------------------------------------------------------
-  const BAND_STYLES = {
-    obstacle: { color: '#FF4D5E', glow: 'rgba(255,77,94,0.55)' },
-    target: { color: '#2FE3B4', glow: 'rgba(47,227,180,0.55)' },
-    slow: { color: '#3EA6FF', glow: 'rgba(62,166,255,0.55)' },
-    life: { color: '#C77DFF', glow: 'rgba(199,125,255,0.65)' },
-    bomb: { color: '#FFA53D', glow: 'rgba(255,165,61,0.6)', icon: '💣' }
+  const BAND_THEMES = {
+    obstacle: {
+      color: '#FF4D5E',
+      coreColor: '#FFA3AB',
+      bloomColor: 'rgba(255, 77, 94, 0.22)',
+      pipColor: '#FFFFFF',
+      icon: null
+    },
+    target: {
+      color: '#2FE3B4',
+      coreColor: '#B2FCE7',
+      bloomColor: 'rgba(47, 227, 180, 0.22)',
+      pipColor: '#FFFFFF',
+      icon: null
+    },
+    slow: {
+      color: '#3EA6FF',
+      coreColor: '#BCE0FF',
+      bloomColor: 'rgba(62, 166, 255, 0.22)',
+      pipColor: '#FFFFFF',
+      icon: null
+    },
+    life: {
+      color: '#C77DFF',
+      coreColor: '#F0D4FF',
+      bloomColor: 'rgba(199, 125, 255, 0.25)',
+      pipColor: '#FFFFFF',
+      icon: null
+    },
+    bomb: {
+      color: '#FFA53D',
+      coreColor: '#FFE0B8',
+      bloomColor: 'rgba(255, 165, 61, 0.24)',
+      pipColor: '#FFFFFF',
+      icon: '💣'
+    }
   };
 
-  function render() {
-    ctx.clearRect(0, 0, cssW, cssH);
-
-    const rInner = radius - laneGap / 2;
-    const rOuter = radius + laneGap / 2;
-    const playerAngle = player.totalAngle % TWO_PI;
-
-    // lane guide rings (always visible, faint)
-    drawRing(rInner, 'rgba(233,236,241,0.10)', 1.5);
-    drawRing(rOuter, 'rgba(233,236,241,0.10)', 1.5);
-
-    // highlight whichever lane the player is currently on — the track
-    // alone is hard to read at speed, so this gives a constant visual
-    // anchor for "where am I right now".
-    const innerActive = 1 - player.laneT;
-    const outerActive = player.laneT;
-    if (innerActive > 0.02) {
-      drawRing(rInner, `rgba(255,176,32,${(0.4 * innerActive).toFixed(3)})`, 3 + 3 * innerActive);
-    }
-    if (outerActive > 0.02) {
-      drawRing(rOuter, `rgba(255,176,32,${(0.4 * outerActive).toFixed(3)})`, 3 + 3 * outerActive);
-    }
-
-    // bands (obstacles / targets / bonuses)
-    for (const it of spawnMgr.items) {
-      const renderAngle = ((it.angle % TWO_PI) + TWO_PI) % TWO_PI;
-      const r = it.lane === 0 ? rInner : rOuter;
-      const style = BAND_STYLES[it.type] || BAND_STYLES.obstacle;
-      drawBand(r, renderAngle, it.width, style, it.resolved);
-    }
-
-    // player
-    const rPlayer = rInner + (rOuter - rInner) * player.laneT;
-    const flashing = performance.now() < player.flashUntil;
-    drawPlayer(rPlayer, playerAngle, flashing);
-
-    // center: countdown ring for the "rallenta" bonus while active,
-    // otherwise just the faint center mark
-    drawCenter();
-
-    // floating text + particle feedback from recent pickups/hits
-    drawEffects();
+  function hexToRgba(hex, alpha) {
+    const v = hex.replace('#', '');
+    const r = parseInt(v.substring(0, 2), 16);
+    const g = parseInt(v.substring(2, 4), 16);
+    const b = parseInt(v.substring(4, 6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
   }
 
-  function drawCenter() {
-    const now = performance.now();
-    if (now < slowUntil) {
-      const remainMs = slowUntil - now;
-      const totalMs = cfg.slowDurationMs;
-      const frac = Math.max(0, Math.min(1, remainMs / totalMs));
-      const ringR = Math.max(18, laneGap * 0.9);
-
-      ctx.save();
-      // background track for the countdown ring
-      ctx.beginPath();
-      ctx.arc(cx, cy, ringR, 0, TWO_PI);
-      ctx.strokeStyle = 'rgba(62,166,255,0.18)';
-      ctx.lineWidth = 4;
-      ctx.stroke();
-
-      // depleting arc — starts full, sweeps away clockwise from 12 o'clock
-      ctx.beginPath();
-      ctx.arc(cx, cy, ringR, -Math.PI / 2, -Math.PI / 2 + TWO_PI * frac);
-      ctx.strokeStyle = '#3EA6FF';
-      ctx.lineWidth = 4;
-      ctx.lineCap = 'round';
-      ctx.shadowColor = 'rgba(62,166,255,0.6)';
-      ctx.shadowBlur = 10;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      ctx.fillStyle = '#3EA6FF';
-      ctx.font = '700 12px "JetBrains Mono", monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText((remainMs / 1000).toFixed(1) + 's', cx, cy);
-      ctx.restore();
-    } else {
-      ctx.beginPath();
-      ctx.arc(cx, cy, 2, 0, TWO_PI);
-      ctx.fillStyle = 'rgba(233,236,241,0.18)';
-      ctx.fill();
-    }
-  }
-
-  function drawEffects() {
-    const now = performance.now();
-    effects = effects.filter((e) => now - e.start < e.duration);
-
-    for (const e of effects) {
-      const t = (now - e.start) / e.duration;
-      const alpha = 1 - t;
-
-      if (e.type === 'text') {
-        ctx.save();
-        ctx.globalAlpha = alpha;
-        ctx.fillStyle = e.color;
-        ctx.font = '700 14px "Space Grotesk", sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'alphabetic';
-        ctx.fillText(e.text, e.x, e.y - t * 34 - 8);
-        ctx.restore();
-      } else if (e.type === 'particle') {
-        const dtSec = (now - e.start) / 1000;
-        const px = e.x + e.vx * dtSec;
-        const py = e.y + e.vy * dtSec;
-        ctx.beginPath();
-        ctx.arc(px, py, Math.max(0.5, 3 * (1 - t)), 0, TWO_PI);
-        ctx.fillStyle = e.color;
-        ctx.globalAlpha = alpha;
-        ctx.fill();
-        ctx.globalAlpha = 1;
-      }
-    }
+  function clockToNative(angle) {
+    return angle - Math.PI / 2;
   }
 
   function drawRing(r, color, width) {
@@ -589,24 +681,127 @@
     ctx.stroke();
   }
 
-  // Player position uses a "clock" convention (angle 0 = 12 o'clock,
-  // increasing clockwise): x = cx + r*sin(a), y = cy - r*cos(a).
-  // Canvas's native arc() angle convention is different (0 = 3 o'clock).
-  // This helper converts a clock-angle to the native angle so bands are
-  // drawn in the exact same place the player will physically be.
-  function clockToNative(angle) {
-    return angle - Math.PI / 2;
+  function render() {
+    // 1. Atmosphere Background
+    const bgGrad = ctx.createRadialGradient(cx, cy, radius * 0.25, cx, cy, Math.max(cssW, cssH) * 0.65);
+    bgGrad.addColorStop(0, '#131822');
+    bgGrad.addColorStop(0.55, '#0B0D12');
+    bgGrad.addColorStop(1, '#060709');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    ctx.save();
+    // Camera shake translation
+    if (screenShake.x !== 0 || screenShake.y !== 0) {
+      ctx.translate(screenShake.x, screenShake.y);
+    }
+
+    // 2. Ambient starfield & tech ticks
+    drawAtmosphere();
+
+    const rInner = radius - laneGap / 2;
+    const rOuter = radius + laneGap / 2;
+    const playerAngle = player.totalAngle % TWO_PI;
+
+    // 3. Track Grooves & Guides
+    drawTracks(rInner, rOuter);
+
+    // 4. Active Lane Highlights
+    drawActiveLane(rInner, rOuter);
+
+    // 5. Bands (Obstacles / Targets / Power-ups)
+    for (const it of spawnMgr.items) {
+      const renderAngle = ((it.angle % TWO_PI) + TWO_PI) % TWO_PI;
+      const r = it.lane === 0 ? rInner : rOuter;
+      const theme = BAND_THEMES[it.type] || BAND_THEMES.obstacle;
+      drawBand(r, renderAngle, it.width, theme, it.resolved);
+    }
+
+    // 6. Shockwave Rings
+    drawShockwaves();
+
+    // 7. Player (Comet Tail Ribbon & Ball)
+    const rPlayer = rInner + (rOuter - rInner) * player.laneT;
+    const flashing = performance.now() < player.flashUntil;
+    drawPlayer(rPlayer, playerAngle, flashing);
+
+    // 8. Center HUD Gauge / Reticle
+    drawCenter();
+
+    // 9. Floating Text & Particles
+    drawEffects();
+
+    ctx.restore();
   }
 
-  function hexToRgba(hex, alpha) {
-    const v = hex.replace('#', '');
-    const r = parseInt(v.substring(0, 2), 16);
-    const g = parseInt(v.substring(2, 4), 16);
-    const b = parseInt(v.substring(4, 6), 16);
-    return `rgba(${r},${g},${b},${alpha})`;
+  function drawAtmosphere() {
+    const now = performance.now();
+    ctx.fillStyle = '#E9ECF1';
+    for (let i = 0; i < ambientStars.length; i++) {
+      const s = ambientStars[i];
+      const curAngle = s.angle + s.speed * now * 0.0005;
+      const curR = s.rFactor * radius * 1.5;
+      const x = cx + curR * Math.cos(curAngle);
+      const y = cy + curR * Math.sin(curAngle);
+      const alpha = s.baseAlpha * (0.6 + 0.4 * Math.sin(now * 0.002 * s.pulseSpeed + s.pulsePhase));
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+      ctx.beginPath();
+      ctx.arc(x, y, s.size, 0, TWO_PI);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Outer tachometer tech ticks (every 30 deg)
+    const tickR = radius + laneGap * 1.35;
+    ctx.strokeStyle = 'rgba(233, 236, 241, 0.05)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let a = 0; a < TWO_PI; a += Math.PI / 6) {
+      const x1 = cx + tickR * Math.cos(a);
+      const y1 = cy + tickR * Math.sin(a);
+      const x2 = cx + (tickR + 5) * Math.cos(a);
+      const y2 = cy + (tickR + 5) * Math.sin(a);
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+    ctx.stroke();
   }
 
-  function drawBand(r, angle, width, style, resolved) {
+  function drawTracks(rInner, rOuter) {
+    // Under-track dark groove
+    ctx.beginPath();
+    ctx.arc(cx, cy, rInner, 0, TWO_PI);
+    ctx.arc(cx, cy, rOuter, 0, TWO_PI);
+    ctx.strokeStyle = 'rgba(25, 30, 42, 0.35)';
+    ctx.lineWidth = laneGap * 1.05;
+    ctx.stroke();
+
+    // Lane guide rings
+    drawRing(rInner, 'rgba(233, 236, 241, 0.08)', 1.5);
+    drawRing(rOuter, 'rgba(233, 236, 241, 0.08)', 1.5);
+
+    // Decorative outer boundaries
+    drawRing(rOuter + laneGap * 0.95, 'rgba(233, 236, 241, 0.02)', 1);
+    drawRing(rInner - laneGap * 0.95, 'rgba(233, 236, 241, 0.02)', 1);
+  }
+
+  function drawActiveLane(rInner, rOuter) {
+    const innerActive = 1 - player.laneT;
+    const outerActive = player.laneT;
+
+    if (innerActive > 0.02) {
+      const a = innerActive;
+      drawRing(rInner, `rgba(255, 176, 32, ${(0.10 * a).toFixed(3)})`, laneGap * 0.75);
+      drawRing(rInner, `rgba(255, 176, 32, ${(0.42 * a).toFixed(3)})`, 2.5 + 2 * a);
+    }
+    if (outerActive > 0.02) {
+      const a = outerActive;
+      drawRing(rOuter, `rgba(255, 176, 32, ${(0.10 * a).toFixed(3)})`, laneGap * 0.75);
+      drawRing(rOuter, `rgba(255, 176, 32, ${(0.42 * a).toFixed(3)})`, 2.5 + 2 * a);
+    }
+  }
+
+  function drawBand(r, angle, width, theme, resolved) {
     const a = clockToNative(angle);
     const trackWidth = laneGap * 0.72;
     ctx.lineCap = 'round';
@@ -614,66 +809,257 @@
     if (resolved) {
       ctx.beginPath();
       ctx.arc(cx, cy, r, a - width / 2, a + width / 2);
-      ctx.strokeStyle = 'rgba(233,236,241,0.08)';
-      ctx.lineWidth = trackWidth;
+      ctx.strokeStyle = 'rgba(233, 236, 241, 0.06)';
+      ctx.lineWidth = trackWidth * 0.55;
       ctx.stroke();
       return;
     }
 
-    // Solid segment with a moderate transparency, so hazards and bonuses
-    // read clearly without feeling like a solid wall.
+    // Layer 1: Ambient outer bloom aura
     ctx.beginPath();
     ctx.arc(cx, cy, r, a - width / 2, a + width / 2);
-    ctx.strokeStyle = hexToRgba(style.color, 0.55);
-    ctx.lineWidth = trackWidth;
-    ctx.shadowColor = style.glow;
-    ctx.shadowBlur = 14;
+    ctx.strokeStyle = theme.bloomColor;
+    ctx.lineWidth = trackWidth * 1.5;
     ctx.stroke();
-    ctx.shadowBlur = 0;
 
-    // Sweet-spot marker at the exact center of the segment: a fully
-    // solid dot (or a small icon for the bomb) showing at a glance
-    // where a hit is worth the most.
+    // Layer 2: Core colored segment
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, a - width / 2, a + width / 2);
+    ctx.strokeStyle = hexToRgba(theme.color, 0.65);
+    ctx.lineWidth = trackWidth * 0.82;
+    ctx.stroke();
+
+    // Layer 3: Inner bright laser core
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, a - width / 2 + 0.02, a + width / 2 - 0.02);
+    ctx.strokeStyle = theme.coreColor;
+    ctx.lineWidth = trackWidth * 0.22;
+    ctx.stroke();
+
+    // Layer 4: Sweet-spot precision pip
     const mx = cx + r * Math.sin(angle);
     const my = cy - r * Math.cos(angle);
 
-    if (style.icon) {
-      ctx.font = `${Math.round(trackWidth * 0.95)}px sans-serif`;
+    if (theme.icon) {
+      ctx.font = `${Math.round(trackWidth * 0.92)}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(style.icon, mx, my);
+      ctx.fillText(theme.icon, mx, my);
     } else {
+      const now = performance.now();
+      const pulse = 1 + 0.18 * Math.sin(now * 0.007 + angle * 3);
+      const pipR = trackWidth * 0.25 * pulse;
+
+      // Glow halo around pip
       ctx.beginPath();
-      ctx.arc(mx, my, trackWidth * 0.24, 0, TWO_PI);
-      ctx.fillStyle = style.color;
-      ctx.shadowColor = style.glow;
-      ctx.shadowBlur = 10;
+      ctx.arc(mx, my, pipR * 1.8, 0, TWO_PI);
+      ctx.fillStyle = theme.bloomColor;
       ctx.fill();
-      ctx.shadowBlur = 0;
+
+      // Colored pip disc
+      ctx.beginPath();
+      ctx.arc(mx, my, pipR, 0, TWO_PI);
+      ctx.fillStyle = theme.color;
+      ctx.fill();
+
+      // Sharp white center dot
+      ctx.beginPath();
+      ctx.arc(mx, my, pipR * 0.5, 0, TWO_PI);
+      ctx.fillStyle = theme.pipColor;
+      ctx.fill();
+    }
+  }
+
+  function drawShockwaves() {
+    const now = performance.now();
+    shockwaves = shockwaves.filter((sw) => now - sw.start < sw.duration);
+
+    for (const sw of shockwaves) {
+      const t = (now - sw.start) / sw.duration;
+      const easedT = 1 - Math.pow(1 - t, 3);
+      const curR = sw.radius + (sw.maxRadius - sw.radius) * easedT;
+      const alpha = (1 - t) * 0.75;
+      ctx.beginPath();
+      ctx.arc(sw.x, sw.y, curR, 0, TWO_PI);
+      ctx.strokeStyle = hexToRgba(sw.color, alpha);
+      ctx.lineWidth = Math.max(1, (sw.lineWidth || 3) * (1 - t * 0.5));
+      ctx.stroke();
     }
   }
 
   function drawPlayer(r, angle, flashing) {
+    const mainColor = flashing ? '#FF4D5E' : '#FFB020';
+    const coreColor = flashing ? '#FFE5E8' : '#FFF8E6';
+    const bloomColor = flashing ? 'rgba(255, 77, 94, 0.25)' : 'rgba(255, 176, 32, 0.25)';
+    const trailColor = flashing ? 'rgba(255, 77, 94,' : 'rgba(255, 176, 32,';
+
+    const playerR = laneGap * 0.33;
+
+    // 1. Render Comet Ribbon Tail
+    if (player.trail && player.trail.length > 1) {
+      for (let i = 1; i < player.trail.length; i++) {
+        const p1 = player.trail[i - 1];
+        const p2 = player.trail[i];
+        const progress = i / player.trail.length;
+        const alpha = Math.max(0, (1 - progress) * 0.45);
+        const w = playerR * 1.8 * (1 - progress * 0.82);
+
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.strokeStyle = `${trailColor}${alpha.toFixed(3)})`;
+        ctx.lineWidth = w;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+      }
+    }
+
+    // 2. Player Body with Squash & Stretch
     const x = cx + r * Math.sin(angle);
     const y = cy - r * Math.cos(angle);
-    const color = flashing ? '#FF4D5E' : '#FFB020';
 
-    ctx.beginPath();
-    ctx.arc(x, y, laneGap * 0.34, 0, TWO_PI);
-    ctx.fillStyle = color;
-    ctx.shadowColor = flashing ? 'rgba(255,77,94,0.8)' : 'rgba(255,176,32,0.75)';
-    ctx.shadowBlur = 16;
-    ctx.fill();
-    ctx.shadowBlur = 0;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    const s = player.squash || 1.0;
+    ctx.scale(1 / s, s);
 
-    // small trail dot behind
-    const trailAngle = angle - 0.14;
-    const tx = cx + r * Math.sin(trailAngle);
-    const ty = cy - r * Math.cos(trailAngle);
+    // Outer soft aura
     ctx.beginPath();
-    ctx.arc(tx, ty, laneGap * 0.16, 0, TWO_PI);
-    ctx.fillStyle = flashing ? 'rgba(255,77,94,0.35)' : 'rgba(255,176,32,0.35)';
+    ctx.arc(0, 0, playerR * 1.7, 0, TWO_PI);
+    ctx.fillStyle = bloomColor;
     ctx.fill();
+
+    // Medium glow disc
+    ctx.beginPath();
+    ctx.arc(0, 0, playerR * 1.25, 0, TWO_PI);
+    ctx.fillStyle = hexToRgba(mainColor, 0.5);
+    ctx.fill();
+
+    // Main ball body
+    ctx.beginPath();
+    ctx.arc(0, 0, playerR, 0, TWO_PI);
+    ctx.fillStyle = mainColor;
+    ctx.fill();
+
+    // Inner bright hot-spot core
+    ctx.beginPath();
+    ctx.arc(-playerR * 0.2, -playerR * 0.2, playerR * 0.45, 0, TWO_PI);
+    ctx.fillStyle = coreColor;
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawCenter() {
+    const now = performance.now();
+    if (now < slowUntil) {
+      const remainMs = slowUntil - now;
+      const totalMs = cfg.slowDurationMs;
+      const frac = Math.max(0, Math.min(1, remainMs / totalMs));
+      const ringR = Math.max(20, laneGap * 0.95);
+
+      ctx.save();
+      // Outer track
+      ctx.beginPath();
+      ctx.arc(cx, cy, ringR, 0, TWO_PI);
+      ctx.strokeStyle = 'rgba(62, 166, 255, 0.16)';
+      ctx.lineWidth = 4.5;
+      ctx.stroke();
+
+      // Glowing progress arc
+      ctx.beginPath();
+      ctx.arc(cx, cy, ringR, -Math.PI / 2, -Math.PI / 2 + TWO_PI * frac);
+      ctx.strokeStyle = 'rgba(62, 166, 255, 0.3)';
+      ctx.lineWidth = 8;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, ringR, -Math.PI / 2, -Math.PI / 2 + TWO_PI * frac);
+      ctx.strokeStyle = '#3EA6FF';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      ctx.fillStyle = '#3EA6FF';
+      ctx.font = '700 12px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((remainMs / 1000).toFixed(1) + 's', cx, cy - 2);
+
+      ctx.font = '600 8px "Space Grotesk", sans-serif';
+      ctx.fillStyle = 'rgba(62, 166, 255, 0.7)';
+      ctx.fillText('SLOW', cx, cy + 9);
+      ctx.restore();
+    } else {
+      // Sleek ambient gyro reticle in center
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(now * 0.0003);
+
+      ctx.beginPath();
+      ctx.arc(0, 0, 9, 0, TWO_PI);
+      ctx.strokeStyle = 'rgba(233, 236, 241, 0.08)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(0, 0, 2, 0, TWO_PI);
+      ctx.fillStyle = 'rgba(233, 236, 241, 0.25)';
+      ctx.fill();
+
+      ctx.restore();
+    }
+  }
+
+  function drawEffects() {
+    const now = performance.now();
+    effects = effects.filter((e) => now - e.start < e.duration);
+
+    for (const e of effects) {
+      const t = (now - e.start) / e.duration;
+      const alpha = Math.max(0, 1 - t);
+
+      if (e.type === 'text') {
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        const scale = e.isCrit
+          ? (t < 0.2 ? 1 + 0.35 * Math.sin((t / 0.2) * Math.PI) : 1)
+          : (t < 0.15 ? 1 + 0.2 * Math.sin((t / 0.15) * Math.PI) : 1);
+
+        const yOffset = t * 38 + 6;
+        ctx.translate(e.x, e.y - yOffset);
+        ctx.scale(scale, scale);
+
+        ctx.font = e.isCrit ? '800 15px "Space Grotesk", sans-serif' : '700 13px "Space Grotesk", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Dark outline for legibility
+        ctx.strokeStyle = 'rgba(7, 8, 12, 0.9)';
+        ctx.lineWidth = 3.5;
+        ctx.strokeText(e.text, 0, 0);
+
+        ctx.fillStyle = e.color;
+        ctx.fillText(e.text, 0, 0);
+
+        ctx.restore();
+      } else if (e.type === 'particle' || e.type === 'spark' || e.type === 'ember') {
+        const dtSec = (now - e.start) / 1000;
+        const drag = e.drag || 0.95;
+        const speedMul = Math.pow(drag, dtSec * 60);
+        const px = e.x + e.vx * dtSec * speedMul;
+        const py = e.y + e.vy * dtSec * speedMul;
+        const curSize = Math.max(0.4, (e.size || 2.5) * (1 - t * 0.8));
+
+        ctx.beginPath();
+        ctx.arc(px, py, curSize, 0, TWO_PI);
+        ctx.fillStyle = e.color;
+        ctx.globalAlpha = alpha;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -683,7 +1069,7 @@
     if (state !== 'playing') return;
     let dt = (ts - lastTs) / 1000;
     lastTs = ts;
-    dt = Math.min(dt, 0.05); // clamp to avoid huge jumps on tab-switch
+    dt = Math.min(dt, 0.05);
 
     update(dt);
     render();
@@ -723,7 +1109,7 @@
   });
 
   el.btnStart.addEventListener('click', () => {
-    window.CCSound.unlock(); // must run inside a user-gesture handler
+    window.CCSound.unlock();
     startGame(selectedDifficulty);
   });
   el.btnRetry.addEventListener('click', () => {

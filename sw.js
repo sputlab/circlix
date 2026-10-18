@@ -3,7 +3,7 @@
  * Provides offline gameplay caching and asset management.
  */
 
-const CACHE_NAME = 'circlix-v1.3.0-cache';
+const CACHE_NAME = 'circlix-v1.3.1-cache';
 
 const STATIC_ASSETS = [
   './',

@@ -1,6 +1,6 @@
 <?php
 /**
- * Circlix — v1.3.0
+ * Circlix — v1.3.1
  * Database configuration template.
  *
  * Copy this file to config.php and edit with your real MySQL credentials before deploying:

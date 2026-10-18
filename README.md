@@ -1,4 +1,4 @@
-# Circlix — v1.3.0
+# Circlix — v1.3.1
 
 <p align="center">
   <img src="icons/icon-192.png" alt="Circlix Icon" width="128" height="128">
@@ -143,6 +143,11 @@ See [SECURITY.md](SECURITY.md) for the complete security evaluation and hardenin
 
 ## Changelog
 
+- **v1.3.1**
+  - Enhanced graphics with multi-pass neon bloom and 60–120 FPS performance optimizations.
+  - Added dynamic comet tail motion ribbon, squash & stretch lane transitions, and speed embers.
+  - Added camera screen shake, expanding shockwave rings, and combo streak multipliers with harmonic pitch chime.
+  - Updated development support link (`https://www.sputlab.com/donate`) and studio link (`https://www.sputlab.com`).
 - **v1.3.0**
   - Added full Progressive Web App (PWA) support with offline gameplay caching via Service Worker.
   - Designed official high-resolution game icon suite (SVG, ICO, Apple touch icon, maskable PWA icons).
