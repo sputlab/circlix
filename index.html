@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Circlix</title>
+<meta name="description" content="Circlix — dodge the obstacles, hit the targets at the perfect moment.">
+<meta name="theme-color" content="#0B0D12">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none';">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============ SPLASH SCREEN ============ -->
+  <section id="splash" class="screen" aria-label="Start screen">
+    <div class="splash-inner">
+      <div class="brand">
+        <svg class="brand-ring" viewBox="0 0 100 100" aria-hidden="true">
+          <circle class="ring-track" cx="50" cy="50" r="40"></circle>
+          <circle class="ring-tick" cx="50" cy="10" r="3.2"></circle>
+        </svg>
+        <h1>Circ<span>lix</span></h1>
+      </div>
+
+      <p class="tagline">Easy to learn. Hard to master.</p>
+
+      <div class="difficulty-select" role="group" aria-label="Select difficulty">
+        <button class="diff-btn active" data-difficulty="easy" type="button">
+          <span class="diff-name">Easy</span>
+          <span class="diff-desc">smooth pace</span>
+        </button>
+        <button class="diff-btn" data-difficulty="hard" type="button">
+          <span class="diff-name">Hard</span>
+          <span class="diff-desc">ruthless pace</span>
+        </button>
+      </div>
+
+      <button id="btn-start" class="btn-primary" type="button">Play</button>
+      <button id="btn-open-quickguide" class="btn-ghost" type="button">Quick Guide</button>
+      <button id="btn-open-leaderboard" class="btn-ghost" type="button">Global Leaderboard</button>
+      <button id="btn-open-settings" class="btn-ghost btn-settings" type="button">⚙ Settings</button>
+
+      <span class="version-tag">v1.2.1</span>
+    </div>
+  </section>
+
+  <!-- ============ GAME SCREEN ============ -->
+  <section id="game" class="screen hidden" aria-label="Game area">
+    <header class="hud">
+      <div class="hud-item">
+        <span class="hud-label">Score</span>
+        <span class="hud-value" id="hud-score">0</span>
+      </div>
+      <div class="hud-item hud-lives" id="hud-lives-wrap">
+        <span class="hud-label">Lives</span>
+        <span class="hud-value" id="hud-lives">●●●</span>
+      </div>
+      <div class="hud-item">
+        <span class="hud-label">Speed</span>
+        <span class="hud-value" id="hud-speed">x1.0</span>
+      </div>
+    </header>
+
+    <div class="canvas-wrap">
+      <canvas id="game-canvas"></canvas>
+    </div>
+
+    <div class="corner-controls corner-controls-left">
+      <button id="btn-pause" class="btn-icon" type="button" aria-label="Pause">❚❚</button>
+    </div>
+    <div class="corner-controls corner-controls-right">
+      <button id="btn-pause-sound" class="btn-icon" type="button" aria-label="Toggle sound">🔊</button>
+    </div>
+
+    <button id="tap-zone" class="tap-zone" type="button" aria-label="Switch lane"></button>
+  </section>
+
+  <!-- ============ PAUSE OVERLAY ============ -->
+  <div id="pause-overlay" class="overlay hidden">
+    <div class="overlay-card">
+      <h2>Paused</h2>
+      <button id="btn-resume" class="btn-primary" type="button">Resume</button>
+      <button id="btn-quit" class="btn-ghost" type="button">Quit to menu</button>
+    </div>
+  </div>
+
+  <!-- ============ GAME OVER OVERLAY ============ -->
+  <div id="gameover-overlay" class="overlay hidden">
+    <div class="overlay-card">
+      <h2>Game Over</h2>
+      <p class="go-score">Score: <span id="go-score-value">0</span></p>
+      <p class="go-diff" id="go-diff-value">Easy</p>
+
+      <div id="go-submit-row" class="go-submit-row">
+        <input id="go-name" type="text" maxlength="16" placeholder="Your name" autocomplete="off">
+        <button id="btn-submit-score" class="btn-primary" type="button">Submit score</button>
+      </div>
+      <p id="go-submit-status" class="go-submit-status" aria-live="polite"></p>
+
+      <div class="go-actions">
+        <button id="btn-retry" class="btn-primary" type="button">Retry</button>
+        <button id="btn-goto-leaderboard" class="btn-ghost" type="button">Leaderboard</button>
+        <button id="btn-goto-menu" class="btn-ghost" type="button">Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ LEADERBOARD OVERLAY ============ -->
+  <div id="leaderboard-overlay" class="overlay hidden">
+    <div class="overlay-card overlay-card-lb">
+      <h2>Global Leaderboard</h2>
+
+      <div class="lb-tabs" role="tablist">
+        <button class="lb-tab active" data-lb-difficulty="easy" type="button">Easy</button>
+        <button class="lb-tab" data-lb-difficulty="hard" type="button">Hard</button>
+      </div>
+
+      <ol id="lb-list" class="lb-list" aria-live="polite">
+        <li class="lb-empty">Loading…</li>
+      </ol>
+
+      <button id="btn-close-leaderboard" class="btn-ghost" type="button">Close</button>
+    </div>
+  </div>
+
+  <!-- ============ QUICK GUIDE OVERLAY ============ -->
+  <div id="quickguide-overlay" class="overlay hidden">
+    <div class="overlay-card overlay-card-quickguide">
+      <h2>Quick Guide</h2>
+
+      <div class="howto">
+        <div class="howto-row">
+          <span class="chip chip-obstacle" aria-hidden="true"></span>
+          <p><strong>Avoid</strong> red segments by switching lanes</p>
+        </div>
+        <div class="howto-row">
+          <span class="chip chip-target" aria-hidden="true"></span>
+          <p><strong>Hit</strong> green segments at the right moment — the solid dot at the center marks where a hit is worth the most</p>
+        </div>
+        <div class="howto-row">
+          <span class="chip chip-tap" aria-hidden="true">•</span>
+          <p><strong>Tap / Space</strong> to switch lanes — speed always keeps climbing</p>
+        </div>
+        <div class="howto-row">
+          <span class="chip chip-target" aria-hidden="true">+</span>
+          <p><strong>Bonus:</strong> every few targets hit earns an extra life</p>
+        </div>
+        <div class="howto-row">
+          <span class="chip chip-slow" aria-hidden="true"></span>
+          <p><strong>Blue</strong> segment: slows the pace down for a few seconds</p>
+        </div>
+        <div class="howto-row">
+          <span class="chip chip-life" aria-hidden="true"></span>
+          <p><strong>Purple</strong> segment (rare): +2 lives at once</p>
+        </div>
+        <div class="howto-row">
+          <span class="chip chip-bomb" aria-hidden="true">💣</span>
+          <p><strong>Orange</strong> segment: detonates and clears every red obstacle currently on the track</p>
+        </div>
+      </div>
+
+      <button id="btn-close-quickguide" class="btn-ghost" type="button">Close</button>
+    </div>
+  </div>
+
+  <!-- ============ SETTINGS OVERLAY ============ -->
+  <div id="settings-overlay" class="overlay hidden">
+    <div class="overlay-card overlay-card-settings">
+      <h2>Settings</h2>
+
+      <div class="settings-list">
+        <button id="btn-toggle-sound" class="btn-settings-row" type="button" aria-pressed="true">
+          <span class="settings-row-label">🔊 Sound</span>
+          <span class="settings-row-value" id="settings-sound-value">On</span>
+        </button>
+        <button id="btn-open-guide" class="btn-settings-row" type="button">
+          <span class="settings-row-label">📘 Guide</span>
+          <span class="settings-row-value">›</span>
+        </button>
+        <button id="btn-open-changelog" class="btn-settings-row" type="button">
+          <span class="settings-row-label">📜 Changelog</span>
+          <span class="settings-row-value">v1.2.1</span>
+        </button>
+        <a class="btn-settings-row" href="https://paypal.me/sputnikov" target="_blank" rel="noopener noreferrer">
+          <span class="settings-row-label">💛 Support development</span>
+          <span class="settings-row-value">↗</span>
+        </a>
+        <a class="btn-settings-row" href="https://www.sputlab.com/webapp/" target="_blank" rel="noopener noreferrer">
+          <span class="settings-row-label">🎮 More Apps &amp; Games</span>
+          <span class="settings-row-value">↗</span>
+        </a>
+      </div>
+
+      <button id="btn-close-settings" class="btn-ghost" type="button">Close</button>
+
+      <p class="made-with-love">Made with love by <a href="https://www.sputlab.com" target="_blank" rel="noopener noreferrer">sputlab.com</a></p>
+    </div>
+  </div>
+
+  <!-- ============ GUIDE OVERLAY ============ -->
+  <div id="guide-overlay" class="overlay hidden">
+    <div class="overlay-card overlay-card-guide">
+      <h2>How to Play</h2>
+
+      <div class="guide-list">
+        <div class="guide-section">
+          <h3>Objective</h3>
+          <p>Your dot orbits a circular track that has two concentric lanes, an inner one and an outer one. Colored segments appear on the track ahead of you. Survive as long as possible while racking up points — the track never stops accelerating, so the real skill is reading the track early and reacting cleanly.</p>
+        </div>
+
+        <div class="guide-section">
+          <h3>Controls</h3>
+          <p>One input does everything: <strong>tap the screen, click, or press Space</strong> to switch between the inner and outer lane. There's no other control — every segment on the track is dealt with by being in the right lane (or the wrong one) at the right moment.</p>
+        </div>
+
+        <div class="guide-section">
+          <h3>Reading the track</h3>
+          <p>The lane you're currently on is highlighted with a soft amber glow on its ring, so you always know where you are at a glance. Segments are drawn ahead of you on either the inner or outer lane — watch which lane they sit on, not just their color.</p>
+        </div>
+
+        <div class="guide-section">
+          <h3 class="guide-chip-title"><span class="chip chip-obstacle" aria-hidden="true"></span> Red — Obstacle</h3>
+          <p>Blocks one lane. If you're in the <strong>same lane</strong> as a red segment when you reach it, you lose a life. Switch to the other lane before it arrives to dodge it safely — a clean dodge gives a small confirming tick sound.</p>
+        </div>
+
+        <div class="guide-section">
+          <h3 class="guide-chip-title"><span class="chip chip-target" aria-hidden="true"></span> Green — Target</h3>
+          <p>Switch into its lane to score. Points aren't all-or-nothing: every segment shows a small <strong>solid dot at its exact center</strong> — that's the sweet spot. The closer to that dot you cross it, the more of the segment's full point value you earn; clipping the faded edge still scores, just less. The same dot marks the sweet spot on every bonus segment below, so you can always judge your timing by eye.</p>
+          <p>Every few targets hit (8 in Easy, 6 in Hard) you earn a <strong>bonus extra life</strong>, up to your difficulty's life cap.</p>
+        </div>
+
+        <div class="guide-section">
+          <h3 class="guide-chip-title"><span class="chip chip-slow" aria-hidden="true"></span> Blue — Slow</h3>
+          <p>Switch into its lane to trigger a temporary slowdown. A countdown ring appears at the center of the track showing exactly how long the reprieve lasts. It's a breather, not a reset: the underlying difficulty ramp keeps building in the background and picks back up the moment the ring empties.</p>
+        </div>
+
+        <div class="guide-section">
+          <h3 class="guide-chip-title"><span class="chip chip-life" aria-hidden="true"></span> Purple — Extra Life <em>(rare)</em></h3>
+          <p>The rarest segment. Switch into its lane for an instant <strong>+2 lives</strong>, up to your difficulty's cap. Don't plan around it — it's a welcome surprise, not a reliable resource.</p>
+        </div>
+
+        <div class="guide-section">
+          <h3 class="guide-chip-title"><span class="chip chip-bomb" aria-hidden="true">💣</span> Orange — Bomb</h3>
+          <p>Switch into its lane to detonate it. Every red obstacle currently on the track is destroyed in a burst of particles, instantly and safely — a clean way to defuse a dangerous stretch ahead. It doesn't score points on its own; its value is the breathing room it buys you.</p>
+        </div>
+
+        <div class="guide-section">
+          <h3>Lives &amp; difficulty</h3>
+          <p><strong>Easy</strong> — start with 4 lives, stockpile up to 8, gentler speed ramp.<br>
+          <strong>Hard</strong> — start with 2 lives, stockpile up to 4, steeper speed ramp from the very first second.</p>
+          <p>Run out of lives and it's game over — your final score and difficulty are shown, and you can submit your name to the global leaderboard.</p>
+        </div>
+
+        <div class="guide-section">
+          <h3>Leaderboard</h3>
+          <p>Scores are tracked separately per difficulty. Check the Global Leaderboard from the start screen, or from the game-over screen right after a run, to see how you stack up.</p>
+        </div>
+      </div>
+
+      <button id="btn-close-guide" class="btn-ghost" type="button">Close</button>
+    </div>
+  </div>
+
+  <!-- ============ CHANGELOG OVERLAY ============ -->
+  <div id="changelog-overlay" class="overlay hidden">
+    <div class="overlay-card overlay-card-changelog">
+      <h2>Changelog</h2>
+
+      <div class="changelog-list">
+        <div class="changelog-entry">
+          <h3>v1.2.1</h3>
+          <ul>
+            <li>All database tables now use the circlix_ prefix (circlix_scores, circlix_run_tokens_used, circlix_rate_limit) instead of cc_</li>
+          </ul>
+        </div>
+        <div class="changelog-entry">
+          <h3>v1.2.0</h3>
+          <ul>
+            <li>Security hardening pass on the leaderboard backend</li>
+            <li>Score submissions now require a signed, single-use "run token" tied to real elapsed play time — closes the old "submit any score directly" exploit</li>
+            <li>Added rate limiting to every API endpoint</li>
+            <li>Tightened the score plausibility check to scale with actual time played, instead of a flat generous cap</li>
+            <li>Added security response headers (X-Frame-Options, Referrer-Policy) and a Content-Security-Policy</li>
+            <li>Full write-up in SECURITY.md for anyone curious about the details</li>
+          </ul>
+        </div>
+        <div class="changelog-entry">
+          <h3>v1.1.0</h3>
+          <ul>
+            <li>Fixed "Score submitted" not being translated on the game-over screen</li>
+            <li>Segments are solid again (with transparency), each with a fully solid dot marking its exact center — the sweet spot for maximum points, now much clearer than the previous gradient</li>
+            <li>New bonus segment: <strong>Bomb</strong> (orange) — detonates and clears every red obstacle currently on the track, with an explosion burst effect</li>
+            <li>Removed the how-to-play explanations from the start screen; added a <strong>Quick Guide</strong> button below Play with the same content, updated for the new bomb bonus</li>
+            <li>Updated the full Guide (in Settings) with the bomb segment</li>
+          </ul>
+        </div>
+        <div class="changelog-entry">
+          <h3>v1.0.1</h3>
+          <ul>
+            <li>Fixed the game name wrapping onto two lines on the start screen</li>
+            <li>Simplified the Easy/Hard buttons — pace description only, life counts are covered in the Guide</li>
+            <li>Added a Guide button in Settings with a full explanation of every game element</li>
+            <li>Segments now show a precision gradient — the brighter/more opaque the center, the more points a perfectly-timed hit is worth</li>
+            <li>Removed the "Production Ready" label</li>
+          </ul>
+        </div>
+        <div class="changelog-entry">
+          <h3>v1.0</h3>
+          <ul>
+            <li>Renamed the game to Circlix</li>
+            <li>Fixed the Easy/Hard buttons showing the wrong life counts</li>
+            <li>Added a Settings menu: sound toggle, changelog, support link, more apps</li>
+            <li>Full English translation</li>
+          </ul>
+        </div>
+        <div class="changelog-entry">
+          <h3>v0.5</h3>
+          <ul>
+            <li>Reduced how often blue "slow" segments spawn</li>
+            <li>Added visual feedback (floating text + particles) on every pickup and hit, not just sound</li>
+            <li>Added a countdown ring at the center of the track for the slow bonus</li>
+            <li>Slowed the speed ramp in both modes — high speeds now take much longer to reach</li>
+            <li>Made purple "life" segments even rarer</li>
+          </ul>
+        </div>
+        <div class="changelog-entry">
+          <h3>v0.4</h3>
+          <ul>
+            <li>Rebalanced lives: Easy 4→8, Hard 2→4 (starting → max)</li>
+            <li>Added the blue "slow" bonus segment</li>
+            <li>Added the rare purple "+2 lives" bonus segment</li>
+            <li>Highlighted the player's current lane on the track</li>
+          </ul>
+        </div>
+        <div class="changelog-entry">
+          <h3>v0.3</h3>
+          <ul>
+            <li>Fixed a rendering bug: segments were drawn 90° off from the player's real position</li>
+            <li>Moved pause/sound buttons to the bottom corners, off the HUD</li>
+            <li>Made the lives indicator more prominent</li>
+            <li>Added a bonus extra life every few targets hit</li>
+          </ul>
+        </div>
+        <div class="changelog-entry">
+          <h3>v0.2</h3>
+          <ul>
+            <li>Fixed a spawn look-ahead bug causing misleading "decoy" segments</li>
+            <li>Added synthesized sound feedback for dodges, hits, and mistakes</li>
+          </ul>
+        </div>
+        <div class="changelog-entry">
+          <h3>v0.1</h3>
+          <ul>
+            <li>Initial test build</li>
+          </ul>
+        </div>
+      </div>
+
+      <button id="btn-close-changelog" class="btn-ghost" type="button">Close</button>
+    </div>
+  </div>
+
+</div>
+
+<script src="js/sound.js"></script>
+<script src="js/leaderboard.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+# Database & Environment Secrets
+api/config.php
+.env
+.env.*
+
+# Local archives and backups
+old/
+*.zip
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Editor & IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# Logs
+*.log
