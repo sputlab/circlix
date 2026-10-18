@@ -6,6 +6,8 @@ api/config.php
 # Local archives and backups
 old/
 *.zip
+screenshot/
+screenshots/
 
 # Operating System Files
 .DS_Store
