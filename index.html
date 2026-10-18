@@ -5,8 +5,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Circlix</title>
 <meta name="description" content="Circlix — dodge the obstacles, hit the targets at the perfect moment.">
+<meta name="application-name" content="Circlix">
 <meta name="theme-color" content="#0B0D12">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none';">
+
+<!-- PWA & Mobile Meta Tags -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Circlix">
+
+<!-- Icons -->
+<link rel="icon" type="image/svg+xml" href="icons/favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="icons/icon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<link rel="shortcut icon" href="favicon.ico">
+
+<!-- Web App Manifest -->
+<link rel="manifest" href="manifest.json">
+
+<!-- Open Graph & Social Cards -->
+<meta property="og:title" content="Circlix">
+<meta property="og:description" content="Circlix — dodge the obstacles, hit the targets at the perfect moment.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="icons/icon-512.png">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Circlix">
+<meta name="twitter:description" content="Circlix — dodge the obstacles, hit the targets at the perfect moment.">
+<meta name="twitter:image" content="icons/icon-512.png">
+
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; manifest-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none';">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -45,7 +73,7 @@
       <button id="btn-open-leaderboard" class="btn-ghost" type="button">Global Leaderboard</button>
       <button id="btn-open-settings" class="btn-ghost btn-settings" type="button">⚙ Settings</button>
 
-      <span class="version-tag">v1.2.1</span>
+      <span class="version-tag">v1.3.0</span>
     </div>
   </section>
 
@@ -171,7 +199,10 @@
   <!-- ============ SETTINGS OVERLAY ============ -->
   <div id="settings-overlay" class="overlay hidden">
     <div class="overlay-card overlay-card-settings">
-      <h2>Settings</h2>
+      <div class="settings-app-header">
+        <img src="icons/icon-192.png" alt="Circlix" class="settings-app-icon" width="56" height="56">
+        <h2>Settings</h2>
+      </div>
 
       <div class="settings-list">
         <button id="btn-toggle-sound" class="btn-settings-row" type="button" aria-pressed="true">
@@ -184,7 +215,7 @@
         </button>
         <button id="btn-open-changelog" class="btn-settings-row" type="button">
           <span class="settings-row-label">📜 Changelog</span>
-          <span class="settings-row-value">v1.2.1</span>
+          <span class="settings-row-value">v1.3.0</span>
         </button>
         <a class="btn-settings-row" href="https://paypal.me/sputnikov" target="_blank" rel="noopener noreferrer">
           <span class="settings-row-label">💛 Support development</span>
@@ -272,6 +303,14 @@
       <h2>Changelog</h2>
 
       <div class="changelog-list">
+        <div class="changelog-entry">
+          <h3>v1.3.0</h3>
+          <ul>
+            <li>Added Progressive Web App (PWA) support with offline gameplay caching via Service Worker</li>
+            <li>Created dedicated high-res game icons (SVG, favicon, Apple touch icon, and maskable PWA icons)</li>
+            <li>Bilingual documentation (English README and Italian README.it.md)</li>
+          </ul>
+        </div>
         <div class="changelog-entry">
           <h3>v1.2.1</h3>
           <ul>
@@ -370,5 +409,6 @@
 <script src="js/sound.js"></script>
 <script src="js/leaderboard.js"></script>
 <script src="js/game.js"></script>
+<script src="js/pwa.js"></script>
 </body>
 </html>

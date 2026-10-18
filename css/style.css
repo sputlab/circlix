@@ -568,6 +568,26 @@ input:focus-visible {
 
 .overlay-card-settings { gap: 10px; }
 
+.settings-app-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.settings-app-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45), 0 0 10px rgba(255, 176, 32, 0.25);
+  display: block;
+}
+
+.settings-app-header h2 {
+  margin: 0;
+}
+
 .settings-list {
   width: 100%;
   display: flex;

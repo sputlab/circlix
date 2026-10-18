@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+      <stop offset="0%" stop-color="#171B24" />
+      <stop offset="85%" stop-color="#0B0D12" />
+      <stop offset="100%" stop-color="#07080B" />
+    </radialGradient>
+
+    <!-- Amber Glow for Player -->
+    <filter id="amberGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Teal Glow for Target -->
+    <filter id="tealGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Coral Glow for Obstacle -->
+    <filter id="coralGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Amber Tail Gradient -->
+    <linearGradient id="tailGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFB020" stop-opacity="0" />
+      <stop offset="70%" stop-color="#FFB020" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#FFB020" stop-opacity="0.9" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background Squircle -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+
+  <!-- Outer Ambient Ring -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#1A1E29" stroke-width="1.5" opacity="0.6" />
+
+  <!-- Concentric Track Guides -->
+  <circle cx="256" cy="256" r="176" fill="none" stroke="#262B36" stroke-width="3" />
+  <circle cx="256" cy="256" r="126" fill="none" stroke="#262B36" stroke-width="3" />
+  <circle cx="256" cy="256" r="76" fill="none" stroke="#1A1E29" stroke-width="1.5" opacity="0.5" />
+
+  <!-- Radial Grid Ticks -->
+  <line x1="256" y1="60" x2="256" y2="452" stroke="#1F232D" stroke-width="1.5" stroke-dasharray="8 12" opacity="0.4" />
+  <line x1="60" y1="256" x2="452" y2="256" stroke="#1F232D" stroke-width="1.5" stroke-dasharray="8 12" opacity="0.4" />
+
+  <!-- Teal Target Segment (Arc on outer track, ~0 to 70 deg) -->
+  <!-- Center 256,256, r=151 (band between 126 and 176, width=28) -->
+  <path d="M 362 149 A 151 151 0 0 1 405 230" fill="none" stroke="#2FE3B4" stroke-width="26" stroke-linecap="round" filter="url(#tealGlow)" />
+  <!-- Center precision pip -->
+  <circle cx="390" cy="186" r="4.5" fill="#FFFFFF" />
+
+  <!-- Coral Obstacle Segment (Arc on inner/outer track) -->
+  <path d="M 405 282 A 151 151 0 0 1 362 363" fill="none" stroke="#FF4D5E" stroke-width="18" stroke-linecap="round" filter="url(#coralGlow)" />
+
+  <!-- Amber Player Trail (Arc leading up to player ball) -->
+  <path d="M 120 300 A 151 151 0 0 1 180 160" fill="none" stroke="url(#tailGrad)" stroke-width="20" stroke-linecap="round" />
+
+  <!-- Amber Player Orb (#FFB020) with Glow -->
+  <circle cx="190" cy="150" r="28" fill="#FFB020" filter="url(#amberGlow)" />
+  <circle cx="190" cy="150" r="22" fill="#FFE27A" />
+  <circle cx="185" cy="144" r="8" fill="#FFFFFF" opacity="0.9" />
+</svg>
